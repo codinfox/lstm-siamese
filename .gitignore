@@ -55,7 +55,12 @@ target/
 /.idea
 
 # 3rd party
-/3rdparty/htk
+/3rdparty/htk/
+/3rdparty/sox-14.4.2/
+
+# debug
+/debug_mfcc/SX442.mfc
+/debug_mfcc/SX442_sox.wav
 
 # results
 /results/**
