@@ -1,4 +1,72 @@
-*.swp
-*.pyc
-*.txt
-*.wav
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+#Ipython Notebook
+.ipynb_checkpoints
+
+
+# PyCharm
+/.idea
+
+# 3rd party
+/3rdparty/htk
+
+# results
+/results/**
+# just for creating folders.
+!/results/features
+!/results/features/.gitignore
+!/results/datasets
+!/results/datasets/.gitignore
+!/results/models
+!/results/models/.gitignore
+!/results/analyses
+!/results/analyses/.gitignore
+!/results/plots
+!/results/plots/.gitignore
