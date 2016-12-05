@@ -18,6 +18,9 @@ def get_HTK_feature():
 
 # my main conclusion about HTK vs python_speech_features is that they are roughly the same for those 12 coefficients,
 # but very different for 0th, and similar for energy.
+# HTK has ability to do Hamming, and it uses log of amplitude, instead of power by default.
+# In actual feature generation, I stick to default of HTK, and 5.1 of Graves' book as much as possible.
+# compare mfcc_config and mfcc_config_debug.
 
 def get_python_speech_features_feature():
     (rate, sig) = wav.read('./SX442_sox.wav')

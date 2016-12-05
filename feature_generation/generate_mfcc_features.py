@@ -110,3 +110,53 @@ if __name__ == '__main__':
         main_loop(timit_train_dir, f)
     with h5py.File(testset_file) as f:
         main_loop(timit_test_dir, f)
+
+    # this is a debugging part, where I just load all the train data, normalize them,
+    # and then write them out as npy files, for use with the initial version of
+    # <https://github.com/dresen/tensorflow_CTC_example>
+
+    trainset_numpy_feature = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'feature')
+    trainset_numpy_label = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'label')
+    if not os.path.exists(trainset_numpy_feature):
+        os.makedirs(trainset_numpy_feature)
+
+    if not os.path.exists(trainset_numpy_label):
+        os.makedirs(trainset_numpy_label)
+
+    feature_list = []
+    label_list = []
+    name_list = []
+
+
+    # then load all the train data
+    def train_data_call_back(name, obj):
+        if isinstance(obj, h5py.Group) and 'feature' in obj:
+            name_split = name.split('/')
+            assert len(name_split) == 4
+            if name_split[-1].startswith('SA'):
+                return
+            else:
+                feature = obj['feature'][...]
+                label = obj['label'][...]
+                feature_list.append(feature)
+                label_list.append(label)
+                name_list.append('_'.join(name_split))
+
+
+    with h5py.File(trainset_file, 'r') as f:
+        f.visititems(train_data_call_back)
+    assert len(feature_list) == len(label_list) == len(name_list) == 3696  # excluding the SA sentences.
+    assert len(set(name_list)) == len(name_list)
+    feature_all = np.concatenate(feature_list, axis=0)
+    print(feature_all.shape)
+    # then normalize the data
+    mean_all = feature_all.mean(axis=0, keepdims=True)
+    std_all = feature_all.std(axis=0, keepdims=True)
+    assert mean_all.shape == std_all.shape == (1, 26)
+
+    # then write them out in numpy files.
+    for name, feature, label in zip(name_list, feature_list, label_list):
+        feature_this = (feature - mean_all) / std_all
+        assert label.ndim == 1
+        np.save(os.path.join(trainset_numpy_feature, name + '.npy'), feature_this.T)
+        np.save(os.path.join(trainset_numpy_label, name + '.npy'), label)
