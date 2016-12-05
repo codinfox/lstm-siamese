@@ -16,10 +16,13 @@ def get_HTK_feature():
     read_obj.fh.close()
     return feature
 
+# my main conclusion about HTK vs python_speech_features is that they are roughly the same for those 12 coefficients,
+# but very different for 0th, and similar for energy.
+
 def get_python_speech_features_feature():
     (rate, sig) = wav.read('./SX442_sox.wav')
     assert rate == 16000
-    mfcc_feat = mfcc(sig, samplerate=rate, appendEnergy=False)
+    mfcc_feat = mfcc(sig, samplerate=rate, appendEnergy=True)
     mfcc_feat = np.concatenate((mfcc_feat[:,1:], mfcc_feat[:,:1]), axis=1)
     return mfcc_feat
 
@@ -40,10 +43,12 @@ if __name__ == '__main__':
     raw_12_HTK = HTK_feature[:,:12]
     raw_12_PSF = PSF_feature[:,:12]
     print('correlation between first 12 coefficients', pearsonr(raw_12_HTK.ravel(), raw_12_PSF.ravel()))
+    print(raw_12_HTK[:5] - raw_12_PSF[:5])
 
     raw_0_HTK = HTK_feature[:, 12:]
     raw_0_PSF = PSF_feature[:, 12:]
     print('correlation between 0th coefficients', pearsonr(raw_0_HTK.ravel(), raw_0_PSF.ravel()))
+    print(raw_0_HTK[:5]-raw_0_PSF[:5])
 
     print('correlation between raw coefficients', pearsonr(HTK_feature.ravel(), PSF_feature.ravel()))
     # normalize them
