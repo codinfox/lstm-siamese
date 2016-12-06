@@ -15,7 +15,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.python.ops import ctc_ops as ctc
-from tensorflow.python.ops import rnn, rnn_cell
+from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops.rnn import bidirectional_rnn
 import numpy as np
 from ctc_example.utils import load_batched_data
@@ -31,80 +31,85 @@ TARGET_PATH = trainset_numpy_label
 learningRate = 0.001
 momentum = 0.9
 nEpochs = 120
-batchSize = 64 
+batchSize = 10
 
 ####Network Parameters
 nFeatures = 26 #12 MFCC coefficients + energy, and derivatives
 nHidden = 128
 nClasses = 62 #39 phonemes, plus the "blank" for CTC
-NLAYER = 2
 
 ####Load data
 print('Loading data')
 batchedData, maxTimeSteps, totalN = load_batched_data(INPUT_PATH, TARGET_PATH, batchSize)
 print('maxTimeSteps', maxTimeSteps, 'totalN', totalN)
+
+def LSTM_Network(input_, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses):
+    ####Network
+    forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
+    backwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
+    fbH1, _, _ = bidirectional_rnn(forwardH1, backwardH1, inputList, dtype=tf.float32,
+        scope='BDLSTM_H1')
+    fbH1rs = [tf.reshape(t, [batchSize, 2, nHidden]) for t in fbH1]
+    outH1 = [tf.reduce_sum(tf.mul(t, weightsOutH1), reduction_indices=1) + biasesOutH1 for t in fbH1rs]
+
+    logits = [tf.matmul(t, weightsClasses) + biasesClasses for t in outH1]
+
+    ####Optimizing
+    logits3d = tf.pack(logits)
+    return logits3d
+
+
 ####Define graph
 print('Defining graph')
 graph = tf.Graph()
 with graph.as_default():
 
-    ####NOTE: try variable-steps inputs and dynamic bidirectional rnn, when it's implemented in tensorflow
+    ####NOTE: this work is unfinished. 
         
     ####Graph input
-    inputX = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
+    inputL = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
     #Prep input data to fit requirements of rnn.bidirectional_rnn
-    inputList = tf.transpose(inputX, [1,0,2])
-
-    targetIxs = tf.placeholder(tf.int64)
-    targetVals = tf.placeholder(tf.int32)
-    targetShape = tf.placeholder(tf.int64)
-    targetY = tf.SparseTensor(targetIxs, targetVals, targetShape)
-    seqLengths = tf.placeholder(tf.int32, shape=(batchSize))
-
+    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
+    xL = tf.reshape(inputL, [-1, nFeatures])
+    # Split to get a list of 'n_steps' tensors of shape (batch_size, n_input)
+    xL = tf.split(0, maxTimeSteps, xL)
+    ####Graph input
+    inputR = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
+    #Prep input data to fit requirements of rnn.bidirectional_rnn
+    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
+    xR = tf.reshape(inputR, [-1, nFeatures])
+    # Split to get a list of 'n_steps' tensors of shape (batch_size, n_input)
+    xR = tf.split(0, maxTimeSteps, xR)
+     
+    label = tf.placeholder(tf.float32, [None])
+    
     ####Weights & biases
+    weightsOutH1 = tf.Variable(tf.truncated_normal([2, nHidden],
+        stddev=np.sqrt(2.0 / (2*nHidden))))
+    biasesOutH1 = tf.Variable(tf.zeros([nHidden]))
+    weightsClasses = tf.Variable(tf.truncated_normal([nHidden, nClasses],
+      stddev=np.sqrt(2.0 / nHidden)))
+    biasesClasses = tf.Variable(tf.zeros([nClasses]))
 
-    W = tf.Variable(tf.truncated_normal([nHidden, nClasses],
-                    stddev=0.01))
-    b = tf.Variable(tf.zeros([nClasses]))
+    with tf.variable_scope("RNN") as scope:
+        o1 = LSTM_Network(xL, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses)
+        scope.reuse_variables()
+        o2 = LSTM_Network(xR, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses)
 
-    ####Network
-    # Define a lstm cell with tensorflow
-    lstm_cell = rnn_cell.BasicLSTMCell(nHidden, forget_bias=1.0)
-    cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * NLAYER)
-
-    # Get lstm cell output
-    initial = cell.zero_state(tf.shape(inputList)[0], tf.float32)
-    outputs, last_state = tf.nn.dynamic_rnn(cell, inputList,
-                                            seqLengths, initial,
-                                            dtype=tf.float32, scope='rnn')
-    
-    outputs = tf.reshape(outputs, (-1, nHidden))
-    logits = tf.matmul(outputs, W) + b
-    
-    logits = tf.reshape(logits, (batchSize, -1, nClasses))
-    logits = tf.transpose(logits, [1,0,2])
-    
-    ####Optimizing
-    loss = tf.reduce_mean(ctc.ctc_loss(logits, targetY, seqLengths))
+    loss = tf.reduce_mean(ctc.ctc_loss(logits3d, targetY, seqLengths))
     optimizer = tf.train.MomentumOptimizer(learningRate, momentum).minimize(loss)
 
-    ####Evaluating
-    predictions = tf.to_int32(ctc.ctc_greedy_decoder(logits, seqLengths)[0][0])
 
-    err = tf.edit_distance(predictions, targetY, normalize=True)
-    err.set_shape([None])
-    err = tf.reduce_mean(err, name='error')
+
+saver = tf.train.Saver()
 
 ####Run session
 with tf.Session(graph=graph) as session:
     print('Initializing')
-    tf.initialize_all_variables().run()
+    #tf.initialize_all_variables().run()
+    saver.restore(sess, "/tmp/model.ckpt")
     for epoch in range(nEpochs):
         print('Epoch', epoch+1, '...')
-        if epoch % 10 == 0:
-            print('Saving Graph')
-            tf.train.Saver().save(session, "/home/zhihaol/807/model.ckpt")
-            tf.train.write_graph(session.graph_def, "/home/zhihaol/807/", "model_graph.pbtxt", True)
         batchErrors = np.zeros(len(batchedData))
         batchRandIxs = np.random.permutation(len(batchedData)) #randomize batch order
         for batch, batchOrigI in enumerate(batchRandIxs):
@@ -112,10 +117,11 @@ with tf.Session(graph=graph) as session:
             batchTargetIxs, batchTargetVals, batchTargetShape = batchTargetSparse
             feedDict = {inputX: batchInputs, targetIxs: batchTargetIxs, targetVals: batchTargetVals,
                         targetShape: batchTargetShape, seqLengths: batchSeqLengths}
-            _, l, er= session.run([optimizer, loss, err], feed_dict=feedDict)
+            _, l, er, lmt = session.run([optimizer, loss, errorRate, logitsMaxTest], feed_dict=feedDict)
+            print(np.unique(lmt)) #print unique argmax values of first sample in batch; should be blank for a while, then spit out target values
             if (batch % 1) == 0:
                 print('Minibatch', batch, '/', batchOrigI, 'loss:', l)
                 print('Minibatch', batch, '/', batchOrigI, 'error rate:', er)
-            batchErrors[batch] = er
-        epochErrorRate = batchErrors.sum() / len(batchErrors)
+            batchErrors[batch] = er*len(batchSeqLengths)
+        epochErrorRate = batchErrors.sum() / totalN
         print('Epoch', epoch+1, 'error rate:', epochErrorRate)

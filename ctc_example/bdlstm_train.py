@@ -30,7 +30,7 @@ TARGET_PATH = trainset_numpy_label
 ####Learning Parameters
 learningRate = 0.001
 momentum = 0.9
-nEpochs = 120
+nEpochs = 100
 batchSize = 10
 
 ####Network Parameters
@@ -90,7 +90,7 @@ with graph.as_default():
 
     ####Evaluating
     logitsMaxTest = tf.slice(tf.argmax(logits3d, 2), [0, 0], [seqLengths[0], 1])
-    predictions = tf.to_int32(ctc.ctc_beam_search_decoder(logits3d, seqLengths)[0][0])
+    predictions = tf.to_int32(ctc.ctc_greedy_decoder(logits3d, seqLengths)[0][0])
     errorRate = tf.reduce_sum(tf.edit_distance(predictions, targetY, normalize=False)) / \
                 tf.to_float(tf.size(targetY.values))
 
@@ -115,3 +115,6 @@ with tf.Session(graph=graph) as session:
             batchErrors[batch] = er*len(batchSeqLengths)
         epochErrorRate = batchErrors.sum() / totalN
         print('Epoch', epoch+1, 'error rate:', epochErrorRate)
+        if epoch % 10 == 0:
+            tf.train.Saver().save(session, "/home/zhihaol/807/model.ckpt")
+            tf.train.write_graph(session.graph_def, "/home/zhihaol/807/", "model_graph.pbtxt", True)
