@@ -8,16 +8,17 @@ from tensorflow.python.ops import ctc_ops as ctc
 from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn
 
-####Learning Parameters
-learningRate = 0.001
-momentum = 0.9
-nEpochs = 120
-batchSize = 10
 
-####Network Parameters
-nFeatures = 26  # 12 MFCC coefficients + energy, and derivatives
-nHidden = 128
-nClasses = 62  # 39 phonemes, plus the "blank" for CTC
+# ####Learning Parameters
+# learningRate = 0.001
+# momentum = 0.9
+# nEpochs = 120
+# batchSize = 10
+#
+# ####Network Parameters
+# nFeatures = 26  # 12 MFCC coefficients + energy, and derivatives
+# nHidden = 128
+# nClasses = 62  # 39 phonemes, plus the "blank" for CTC
 
 
 def define_input(nFeatures):
@@ -28,7 +29,7 @@ def define_input(nFeatures):
     targetVals = tf.placeholder(tf.int32)
     targetShape = tf.placeholder(tf.int64)
     targetY = tf.SparseTensor(targetIxs, targetVals, targetShape)
-    seqLengths = tf.placeholder(tf.int32, shape=(batchSize))
+    seqLengths = tf.placeholder(tf.int32, shape=(None))
 
     batch_size = tf.shape(inputX)[0]
     max_timesteps = tf.shape(inputX)[1]
@@ -50,11 +51,11 @@ def define_one_layer_BLSTM(inputX, seqLengths, nHidden):
 
 
 def define_logit_and_ctc(output_combined, targetY, seqLengths, nHidden, nClass, batch_size):
-    W = tf.Variable(tf.truncated_normal([nHidden, nClasses],
-                                                     stddev=np.sqrt(2.0 / nHidden)))
+    W = tf.Variable(tf.truncated_normal([nHidden, nClass],
+                                        stddev=np.sqrt(2.0 / nHidden)))
     # Zero initialization
     # Tip: tf.zeros_initializer
-    b = tf.Variable(tf.zeros([nClasses]))
+    b = tf.Variable(tf.zeros([nClass]))
     output_combined_reshape = tf.reshape(output_combined, [-1, nHidden])
     # Doing the affine projection
     logits = tf.matmul(output_combined_reshape, W) + b
