@@ -77,7 +77,7 @@ with graph.as_default():
     forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     backwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     fbH1, _, _ = bidirectional_rnn(forwardH1, backwardH1, inputList, dtype=tf.float32,
-                                       scope='BDLSTM_H1')
+                                       scope='BDLSTM_H1', sequence_length=seqLengths)
     fbH1rs = [tf.reshape(t, [batchSize, 2, nHidden]) for t in fbH1]
     outH1 = [tf.reduce_sum(tf.mul(t, weightsOutH1), reduction_indices=1) + biasesOutH1 for t in fbH1rs]
 
