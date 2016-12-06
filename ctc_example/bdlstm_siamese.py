@@ -30,7 +30,7 @@ TARGET_PATH = trainset_numpy_label
 ####Learning Parameters
 learningRate = 0.001
 momentum = 0.9
-nEpochs = 100
+nEpochs = 120
 batchSize = 10
 
 ####Network Parameters
@@ -42,42 +42,13 @@ nClasses = 62 #39 phonemes, plus the "blank" for CTC
 print('Loading data')
 batchedData, maxTimeSteps, totalN = load_batched_data(INPUT_PATH, TARGET_PATH, batchSize)
 print('maxTimeSteps', maxTimeSteps, 'totalN', totalN)
-####Define graph
-print('Defining graph')
-graph = tf.Graph()
-with graph.as_default():
 
-    ####NOTE: try variable-steps inputs and dynamic bidirectional rnn, when it's implemented in tensorflow
-        
-    ####Graph input
-    inputX = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
-    #Prep input data to fit requirements of rnn.bidirectional_rnn
-    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
-    inputXrs = tf.reshape(inputX, [-1, nFeatures])
-    #  Split to get a list of 'n_steps' tensors of shape (batch_size, n_hidden)
-    inputList = tf.split(0, maxTimeSteps, inputXrs)
-    targetIxs = tf.placeholder(tf.int64)
-    targetVals = tf.placeholder(tf.int32)
-    targetShape = tf.placeholder(tf.int64)
-    targetY = tf.SparseTensor(targetIxs, targetVals, targetShape)
-    seqLengths = tf.placeholder(tf.int32, shape=(batchSize))
-
-    ####Weights & biases
-    weightsOutH1 = tf.Variable(tf.truncated_normal([2, nHidden],
-                                                   stddev=np.sqrt(2.0 / (2*nHidden))))
-    biasesOutH1 = tf.Variable(tf.zeros([nHidden]))
-    weightsOutH2 = tf.Variable(tf.truncated_normal([2, nHidden],
-                                                   stddev=np.sqrt(2.0 / (2*nHidden))))
-    biasesOutH2 = tf.Variable(tf.zeros([nHidden]))
-    weightsClasses = tf.Variable(tf.truncated_normal([nHidden, nClasses],
-                                                     stddev=np.sqrt(2.0 / nHidden)))
-    biasesClasses = tf.Variable(tf.zeros([nClasses]))
-
+def LSTM_Network(input_, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses):
     ####Network
     forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     backwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     fbH1, _, _ = bidirectional_rnn(forwardH1, backwardH1, inputList, dtype=tf.float32,
-                                       scope='BDLSTM_H1')
+        scope='BDLSTM_H1')
     fbH1rs = [tf.reshape(t, [batchSize, 2, nHidden]) for t in fbH1]
     outH1 = [tf.reduce_sum(tf.mul(t, weightsOutH1), reduction_indices=1) + biasesOutH1 for t in fbH1rs]
 
@@ -85,19 +56,58 @@ with graph.as_default():
 
     ####Optimizing
     logits3d = tf.pack(logits)
+    return logits3d
+
+
+####Define graph
+print('Defining graph')
+graph = tf.Graph()
+with graph.as_default():
+
+    ####NOTE: this work is unfinished. 
+        
+    ####Graph input
+    inputL = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
+    #Prep input data to fit requirements of rnn.bidirectional_rnn
+    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
+    xL = tf.reshape(inputL, [-1, nFeatures])
+    # Split to get a list of 'n_steps' tensors of shape (batch_size, n_input)
+    xL = tf.split(0, maxTimeSteps, xL)
+    ####Graph input
+    inputR = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
+    #Prep input data to fit requirements of rnn.bidirectional_rnn
+    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
+    xR = tf.reshape(inputR, [-1, nFeatures])
+    # Split to get a list of 'n_steps' tensors of shape (batch_size, n_input)
+    xR = tf.split(0, maxTimeSteps, xR)
+     
+    label = tf.placeholder(tf.float32, [None])
+    
+    ####Weights & biases
+    weightsOutH1 = tf.Variable(tf.truncated_normal([2, nHidden],
+        stddev=np.sqrt(2.0 / (2*nHidden))))
+    biasesOutH1 = tf.Variable(tf.zeros([nHidden]))
+    weightsClasses = tf.Variable(tf.truncated_normal([nHidden, nClasses],
+      stddev=np.sqrt(2.0 / nHidden)))
+    biasesClasses = tf.Variable(tf.zeros([nClasses]))
+
+    with tf.variable_scope("RNN") as scope:
+        o1 = LSTM_Network(xL, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses)
+        scope.reuse_variables()
+        o2 = LSTM_Network(xR, weightsOutH1, weightsClasses, biasesOutH1, biasesClasses)
+
     loss = tf.reduce_mean(ctc.ctc_loss(logits3d, targetY, seqLengths))
     optimizer = tf.train.MomentumOptimizer(learningRate, momentum).minimize(loss)
 
-    ####Evaluating
-    logitsMaxTest = tf.slice(tf.argmax(logits3d, 2), [0, 0], [seqLengths[0], 1])
-    predictions = tf.to_int32(ctc.ctc_greedy_decoder(logits3d, seqLengths)[0][0])
-    errorRate = tf.reduce_sum(tf.edit_distance(predictions, targetY, normalize=False)) / \
-                tf.to_float(tf.size(targetY.values))
+
+
+saver = tf.train.Saver()
 
 ####Run session
 with tf.Session(graph=graph) as session:
     print('Initializing')
-    tf.initialize_all_variables().run()
+    #tf.initialize_all_variables().run()
+    saver.restore(sess, "/tmp/model.ckpt")
     for epoch in range(nEpochs):
         print('Epoch', epoch+1, '...')
         batchErrors = np.zeros(len(batchedData))
@@ -115,6 +125,3 @@ with tf.Session(graph=graph) as session:
             batchErrors[batch] = er*len(batchSeqLengths)
         epochErrorRate = batchErrors.sum() / totalN
         print('Epoch', epoch+1, 'error rate:', epochErrorRate)
-        if epoch % 10 == 0:
-            tf.train.Saver().save(session, "/home/zhihaol/807/model.ckpt")
-            tf.train.write_graph(session.graph_def, "/home/zhihaol/807/", "model_graph.pbtxt", True)

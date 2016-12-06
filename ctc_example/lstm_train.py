@@ -53,10 +53,8 @@ with graph.as_default():
     ####Graph input
     inputX = tf.placeholder(tf.float32, shape=(maxTimeSteps, batchSize, nFeatures))
     #Prep input data to fit requirements of rnn.bidirectional_rnn
-    #  Reshape to 2-D tensor (nTimeSteps*batchSize, nfeatures)
-    inputXrs = tf.reshape(inputX, [-1, nFeatures])
-    #  Split to get a list of 'n_steps' tensors of shape (batch_size, n_hidden)
-    inputList = tf.split(0, maxTimeSteps, inputXrs)
+    inputList = tf.transpose(inputX, [1,0,2])
+
     targetIxs = tf.placeholder(tf.int64)
     targetVals = tf.placeholder(tf.int32)
     targetShape = tf.placeholder(tf.int64)
@@ -75,7 +73,10 @@ with graph.as_default():
     cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * NLAYER)
 
     # Get lstm cell output
-    outputs, _ = rnn.rnn(cell, inputList, dtype=tf.float32)
+    initial = cell.zero_state(tf.shape(inputList)[0], tf.float32)
+    outputs, last_state = tf.nn.dynamic_rnn(cell, inputList,
+                                            seqLengths, initial,
+                                            dtype=tf.float32, scope='rnn')
     
     outputs = tf.reshape(outputs, (-1, nHidden))
     logits = tf.matmul(outputs, W) + b
@@ -111,8 +112,7 @@ with tf.Session(graph=graph) as session:
             batchTargetIxs, batchTargetVals, batchTargetShape = batchTargetSparse
             feedDict = {inputX: batchInputs, targetIxs: batchTargetIxs, targetVals: batchTargetVals,
                         targetShape: batchTargetShape, seqLengths: batchSeqLengths}
-            _, l, er, lmt = session.run([optimizer, loss, err, logitsMaxTest], feed_dict=feedDict)
-            print(np.unique(lmt)) #print unique argmax values of first sample in batch; should be blank for a while, then spit out target values
+            _, l, er= session.run([optimizer, loss, err], feed_dict=feedDict)
             if (batch % 1) == 0:
                 print('Minibatch', batch, '/', batchOrigI, 'loss:', l)
                 print('Minibatch', batch, '/', batchOrigI, 'error rate:', er)
