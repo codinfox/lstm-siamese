@@ -146,12 +146,15 @@ if __name__ == '__main__':
 
     trainset_numpy_feature = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'feature')
     trainset_numpy_label = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'label')
-    trainset_numpy_sentence_file = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'sentence.npy')
+    trainset_numpy_sentence = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'sentence_label')
     if not os.path.exists(trainset_numpy_feature):
         os.makedirs(trainset_numpy_feature)
 
     if not os.path.exists(trainset_numpy_label):
         os.makedirs(trainset_numpy_label)
+
+    if not os.path.exists(trainset_numpy_sentence):
+        os.makedirs(trainset_numpy_sentence)
 
     feature_list = []
     label_list = []
@@ -192,14 +195,15 @@ if __name__ == '__main__':
     assert mean_all.shape == std_all.shape == (1, 26)
 
     # then write them out in numpy files.
-    for name, feature, label in zip(name_list, feature_list, label_list):
+    for name, feature, label, sentence_label in zip(name_list, feature_list, label_list, sentence_list):
         feature_this = (feature - mean_all) / std_all
         assert label.ndim == 1
         np.save(os.path.join(trainset_numpy_feature, name + '.npy'), feature_this.T)
         np.save(os.path.join(trainset_numpy_label, name + '.npy'), label)
+        np.save(os.path.join(trainset_numpy_sentence, name + '.npy'), np.uint16(sentence_label))
 
-    # save sentence id.
-    sentence_list_np = np.array(sentence_list, dtype=np.uint32)
-    assert np.array_equal(sentence_list_np, np.array(sentence_list))
-    assert sentence_list_np.shape == (3696,)
-    np.save(trainset_numpy_sentence_file, sentence_list_np)
+    # # save sentence id.
+    # sentence_list_np = np.array(sentence_list, dtype=np.uint32)
+    # assert np.array_equal(sentence_list_np, np.array(sentence_list))
+    # assert sentence_list_np.shape == (3696,)
+    # np.save(trainset_numpy_sentence_file, sentence_list_np)
