@@ -84,15 +84,15 @@ with graph.as_default():
     logits = tf.transpose(logits, [1,0,2])
     
     ####Optimizing
-    logits3d = tf.pack(logits)
-    loss = tf.reduce_mean(ctc.ctc_loss(logits3d, targetY, seqLengths))
+    loss = tf.reduce_mean(ctc.ctc_loss(logits, targetY, seqLengths))
     optimizer = tf.train.MomentumOptimizer(learningRate, momentum).minimize(loss)
 
     ####Evaluating
-    logitsMaxTest = tf.slice(tf.argmax(logits3d, 2), [0, 0], [seqLengths[0], 1])
-    predictions = tf.to_int32(ctc.ctc_beam_search_decoder(logits3d, seqLengths)[0][0])
-    errorRate = tf.reduce_sum(tf.edit_distance(predictions, targetY, normalize=False)) / \
-                tf.to_float(tf.size(targetY.values))
+    predictions = tf.to_int32(ctc.ctc_greedy_decoder(logits, seqLengths)[0][0])
+
+    err = tf.edit_distance(predictions, targetY, normalize=True)
+    err.set_shape([None])
+    err = tf.reduce_mean(err, name='error')
 
 ####Run session
 with tf.Session(graph=graph) as session:
@@ -111,7 +111,7 @@ with tf.Session(graph=graph) as session:
             batchTargetIxs, batchTargetVals, batchTargetShape = batchTargetSparse
             feedDict = {inputX: batchInputs, targetIxs: batchTargetIxs, targetVals: batchTargetVals,
                         targetShape: batchTargetShape, seqLengths: batchSeqLengths}
-            _, l, er, lmt = session.run([optimizer, loss, errorRate, logitsMaxTest], feed_dict=feedDict)
+            _, l, er, lmt = session.run([optimizer, loss, err, logitsMaxTest], feed_dict=feedDict)
             print(np.unique(lmt)) #print unique argmax values of first sample in batch; should be blank for a while, then spit out target values
             if (batch % 1) == 0:
                 print('Minibatch', batch, '/', batchOrigI, 'loss:', l)
