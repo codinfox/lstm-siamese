@@ -111,12 +111,42 @@ if __name__ == '__main__':
     with h5py.File(testset_file) as f:
         main_loop(timit_test_dir, f)
 
+    # a debugging part to for later siamese mapping.
+
+    sentence_dict = {
+        'SA': set(),
+        'SX': set(),
+        'SI': set(),
+    }
+
+
+    def check_number_call_back(name, obj):
+        if isinstance(obj, h5py.Group) and 'feature' in obj:
+            name_split = name.split('/')
+            assert len(name_split) == 4
+            sentenceid = name_split[-1]
+            sentencetype = sentenceid[:2]
+            sentenceid_pure = sentenceid[2:]
+            sentence_dict[sentencetype] = sentence_dict[sentencetype] | {int(sentenceid_pure)}
+
+
+    # let's scan the whole set of sentence numbers.
+    with h5py.File(trainset_file, 'r') as f:
+        f.visititems(check_number_call_back)
+    # you should add test set to make the assertions hold.
+    with h5py.File(testset_file, 'r') as f:
+        f.visititems(check_number_call_back)
+    assert sentence_dict['SA'] == set(range(1, 3))
+    assert sentence_dict['SX'] == set(range(3, 453))
+    assert sentence_dict['SI'] == set(range(453, 2343))
+
     # this is a debugging part, where I just load all the train data, normalize them,
     # and then write them out as npy files, for use with the initial version of
     # <https://github.com/dresen/tensorflow_CTC_example>
 
     trainset_numpy_feature = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'feature')
     trainset_numpy_label = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'label')
+    trainset_numpy_sentence_file = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'sentence.npy')
     if not os.path.exists(trainset_numpy_feature):
         os.makedirs(trainset_numpy_feature)
 
@@ -125,6 +155,7 @@ if __name__ == '__main__':
 
     feature_list = []
     label_list = []
+    sentence_list = []
     name_list = []
 
 
@@ -141,6 +172,12 @@ if __name__ == '__main__':
                 feature_list.append(feature)
                 label_list.append(label)
                 name_list.append('_'.join(name_split))
+
+                # add sentence id.
+                sentenceid = name_split[-1]
+                sentencetype = sentenceid[:2]
+                sentenceid_pure = int(sentenceid[2:])
+                sentence_list.append(sentenceid_pure)
 
 
     with h5py.File(trainset_file, 'r') as f:
@@ -160,3 +197,9 @@ if __name__ == '__main__':
         assert label.ndim == 1
         np.save(os.path.join(trainset_numpy_feature, name + '.npy'), feature_this.T)
         np.save(os.path.join(trainset_numpy_label, name + '.npy'), label)
+
+    # save sentence id.
+    sentence_list_np = np.array(sentence_list, dtype=np.uint32)
+    assert np.array_equal(sentence_list_np, np.array(sentence_list))
+    assert sentence_list_np.shape == (3696,)
+    np.save(trainset_numpy_sentence_file, sentence_list_np)
