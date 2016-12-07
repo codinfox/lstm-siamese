@@ -54,6 +54,9 @@ target/
 # PyCharm
 /.idea
 
+# Vim
+*.swp
+
 # 3rd party
 /3rdparty/htk/
 /3rdparty/sox-14.4.2/
