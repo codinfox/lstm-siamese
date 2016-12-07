@@ -16,21 +16,21 @@ from __future__ import print_function
 import tensorflow as tf
 from lstm_siamese import dir_dictionary
 import os.path
-import numpy as np
-from lstm_siamese.model_definitions import define_one_layer_BLSTM, define_logit_and_ctc, \
+
+from lstm_siamese.model_definitions_legacy import define_one_layer_BLSTM, define_logit_and_ctc, \
     define_pretrain_input_batch, define_one_layer_LSTM
 
 # trainset_numpy_feature = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'feature')
 # trainset_numpy_label = os.path.join(dir_dictionary['features'], 'TIMIT_train', 'label')
 # INPUT_PATH = trainset_numpy_feature
 # TARGET_PATH = trainset_numpy_label
-INPUT_PATH = os.path.join(dir_dictionary['features'], 'TIMIT_train_tf')
+INPUT_PATH = os.path.join(dir_dictionary['features'], 'TIMIT_train_tf_legacy')
 ####Learning Parameters
 learningRate = 0.001
 momentum = 0.9
 nEpochs = 120
 batchSize = 2
-batchSize = 33 # more, for more stable result.
+batchSize = 33
 
 ####Network Parameters
 nFeatures = 26  # 12 MFCC coefficients + energy, and derivatives
@@ -43,9 +43,7 @@ nClasses = 62  # 39 phonemes, plus the "blank" for CTC
 # print('maxTimeSteps', maxTimeSteps, 'totalN', totalN)
 # ####Define graph
 
-batch_per_epoch = 3696 // batchSize
-if batch_per_epoch * batchSize != 3696:
-    batch_per_epoch += 1
+batch_per_epoch = 3696//batchSize
 
 print('Defining graph')
 graph = tf.Graph()
@@ -53,16 +51,14 @@ with graph.as_default():
     tf.set_random_seed(1)
     # (inputX, targetIxs, targetVals, targetShape), (targetY, seqLengths), (batch_size, max_timesteps) = define_input(
     #     nFeatures)
-    mfcc_batch, n_frame_batch, label_sparse, name_batch, label_batch = define_pretrain_input_batch(INPUT_PATH,
-                                                                                                   batchSize,
-                                                                                                   epoch=None)
+    mfcc_batch, n_frame_batch, label_sparse = define_pretrain_input_batch(INPUT_PATH, batchSize, epoch=None)
     output_combined, nHidden_output = define_one_layer_BLSTM(mfcc_batch, n_frame_batch, nHidden)
     #output_combined, nHidden_output = define_one_layer_LSTM(mfcc_batch, n_frame_batch, nHidden)
     print(nHidden_output)
     loss, errorRate, logits = define_logit_and_ctc(output_combined, label_sparse, n_frame_batch, nHidden_output,
                                                    nClasses)
     optimizer = tf.train.MomentumOptimizer(learningRate, momentum).minimize(loss)
-    # optimizer = tf.train.AdamOptimizer(learningRate).minimize(loss)
+    #optimizer = tf.train.AdamOptimizer(learningRate).minimize(loss)
     output_combined_shape = tf.shape(output_combined)
     logits_shape = tf.shape(logits)
 
@@ -70,7 +66,6 @@ with graph.as_default():
 
 
     print(mfcc_batch, n_frame_batch, label_sparse)
-
 ####Run session
 with tf.Session(graph=graph) as session:
     print('Initializing')
@@ -81,15 +76,13 @@ with tf.Session(graph=graph) as session:
     try:
         while not coord.should_stop():
             # Run training steps or whatever
-            _, l, er, output_shape, logits_shape_np, name_batch_np, label_sparse_dense_np,\
-            label_batch_np, mfcc_batch_np, n_frame_batch_np, label_sparse_np = session.run(
-                [optimizer, loss, errorRate,
-                 output_combined_shape, logits_shape,
-                 name_batch, label_sparse_dense, label_batch, mfcc_batch, n_frame_batch, label_sparse])
-            # l, er, output_shape, logits_shape_np, name_batch_np, label_sparse_dense_np, label_batch_np, mfcc_batch_np = session.run(
-            #     [loss, errorRate,
-            #      output_combined_shape, logits_shape,
-            #      name_batch, label_sparse_dense, label_batch, mfcc_batch])
+            _, l, er, output_shape, logits_shape_np, mfcc_batch_np,\
+            label_sparse_dense_np, n_frame_batch_np, label_sparse_np = session.run([optimizer, loss, errorRate,
+                                                                   output_combined_shape, logits_shape, mfcc_batch,
+                                                                   label_sparse_dense, n_frame_batch, label_sparse])
+            # l, er, output_shape, logits_shape_np, mfcc_batch_np = session.run([loss, errorRate,
+            #                                                                       output_combined_shape, logits_shape,
+            #                                                                       mfcc_batch])
             print(output_shape, logits_shape_np)
             epoch_current = mini_batch_current / batch_per_epoch
             mini_batch_current += 1
@@ -98,13 +91,10 @@ with tf.Session(graph=graph) as session:
             print('mini {}/{}'.format(mini_batch_current % batch_per_epoch, batch_per_epoch))
             print('loss:', l)
             print('error rate:', er)
-            # print('mean {}, std {}'.format(mfcc_batch_np.mean(), mfcc_batch_np.std()))
-            # print('label mean {}, std {}'.format(label_batch_np.mean(), label_batch_np.std()))
+            # print('mean {} std {}'.format(mfcc_batch_np.mean(),mfcc_batch_np.std()))
+            # print('label mean {} std {}'.format(label_sparse_dense_np.mean(), label_sparse_dense_np.std()))
             # print(label_sparse_np)
             # print(n_frame_batch_np)
-            # print(name_batch_np)
-            # print(label_sparse_dense_np, label_batch_np, name_batch_np)
-            assert np.array_equal(label_sparse_dense_np, label_batch_np)
     except tf.errors.OutOfRangeError:
         print('Done training -- epoch limit reached')
 

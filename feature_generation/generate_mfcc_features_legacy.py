@@ -101,14 +101,8 @@ def main_loop(start_dir, grp):
     os.remove(tmp_mfc_file)
 
 
-# from
-# <https://github.com/tensorflow/tensorflow/blob/r0.12/tensorflow/examples/how_tos/reading_data/convert_to_records.py>
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def _bytes_feature(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
 def _one_row_of_np_to_naive(np_array):
@@ -137,19 +131,11 @@ def write_one_tf_record(h5obj, output_dir):
         context=tf.train.Features(feature={
             'n_frame': _int64_feature(n_frame),
             'sentence_id': _int64_feature(sentenceid_pure),
-            'name': _bytes_feature(bytes('_'.join(name_split)))
         }),
-        feature_lists=tf.train.FeatureLists(
-            feature_list=
-            {
-                'mfcc': tf.train.FeatureList(
-                    feature=[tf.train.Feature(float_list=tf.train.FloatList(value=_one_row_of_np_to_naive(x))) for x in
-                             feature]),
-                'label': tf.train.FeatureList(
-                    feature=[tf.train.Feature(int64_list=tf.train.Int64List(value=[x])) for x in
-                             _one_row_of_np_to_naive(label)]
-                )
-            },
+        feature_lists=tf.train.FeatureLists(feature_list={
+            'mfcc': tf.train.FeatureList(
+                feature=[tf.train.Feature(float_list=tf.train.FloatList(value=_one_row_of_np_to_naive(x))) for x in
+                         feature])},
         )
     )
     # separate file for each instance. Thus, we can do filename level shuffling,
@@ -158,16 +144,16 @@ def write_one_tf_record(h5obj, output_dir):
     print('writing {}'.format(filename))
     with tf.python_io.TFRecordWriter(filename) as writer:
         writer.write(record_to_write.SerializeToString())
-        #
-        # # then write another one, only for label
-        # record_to_write_label = tf.train.Example(
-        #     features=tf.train.Features(feature={
-        #         'label': tf.train.Feature(int64_list=tf.train.Int64List(value=_one_row_of_np_to_naive(label))),
-        #     })
-        # )
-        # filename = os.path.join(output_dir, '_'.join(name_split) + '.tfrecords_label')
-        # with tf.python_io.TFRecordWriter(filename) as writer:
-        #     writer.write(record_to_write_label.SerializeToString())
+
+    # then write another one, only for label
+    record_to_write_label = tf.train.Example(
+        features=tf.train.Features(feature={
+            'label': tf.train.Feature(int64_list=tf.train.Int64List(value=_one_row_of_np_to_naive(label))),
+        })
+    )
+    filename = os.path.join(output_dir, '_'.join(name_split) + '.tfrecords_label')
+    with tf.python_io.TFRecordWriter(filename) as writer:
+        writer.write(record_to_write_label.SerializeToString())
 
 
 def convert_hdf5_to_tf(infile, outfile_dir):
@@ -210,26 +196,22 @@ def compare_one_tf_record(h5obj, output_dir):
         # #print(example)
         # print(serialized_example)
         tf_mfcc = np.asarray([x.float_list.value for x in example.feature_lists.feature_list['mfcc'].feature])
-        tf_label = np.asarray([x.int64_list.value for x in example.feature_lists.feature_list['label'].feature]).ravel()
         tf_sentence_id = example.context.feature['sentence_id'].int64_list.value[0]
-        tf_name = example.context.feature['name'].bytes_list.value[0].decode()
     assert counter == 1
     assert np.array_equal(tf_mfcc, feature)
-    assert np.array_equal(tf_label, label)
-    assert tf_name == '_'.join(name_split)
     assert sentenceid_pure == tf_sentence_id
 
-    # filename2 = os.path.join(output_dir, '_'.join(name_split) + '.tfrecords_label')
-    # counter = 0
-    # for serialized_example in tf.python_io.tf_record_iterator(filename2):
-    #     counter += 1
-    #     example = tf.train.Example()
-    #     example.ParseFromString(serialized_example)
-    #     # #print(example)
-    #     # print(serialized_example)
-    #     tf_label = np.asarray(example.features.feature['label'].int64_list.value)
-    # assert counter == 1
-    # assert np.array_equal(tf_label, label)
+    filename2 = os.path.join(output_dir, '_'.join(name_split) + '.tfrecords_label')
+    counter = 0
+    for serialized_example in tf.python_io.tf_record_iterator(filename2):
+        counter += 1
+        example = tf.train.Example()
+        example.ParseFromString(serialized_example)
+        # #print(example)
+        # print(serialized_example)
+        tf_label = np.asarray(example.features.feature['label'].int64_list.value)
+    assert counter == 1
+    assert np.array_equal(tf_label, label)
 
 
 def compare_hdf5_and_tf(infile, outfile_dir):
@@ -256,8 +238,8 @@ if __name__ == '__main__':
         main_loop(timit_test_dir, f)
 
     # make tf compatible data set
-    trainset_tf = os.path.join(dir_dictionary['features'], 'TIMIT_train_tf')
-    testset_tf = os.path.join(dir_dictionary['features'], 'TIMIT_test_tf')
+    trainset_tf = os.path.join(dir_dictionary['features'], 'TIMIT_train_tf_legacy')
+    testset_tf = os.path.join(dir_dictionary['features'], 'TIMIT_test_tf_legacy')
     if not os.path.exists(trainset_tf):
         os.makedirs(trainset_tf)
 
@@ -268,6 +250,7 @@ if __name__ == '__main__':
     compare_hdf5_and_tf(trainset_file, trainset_tf)
     convert_hdf5_to_tf(testset_file, testset_tf)
     compare_hdf5_and_tf(testset_file, testset_tf)
+
 
     # test that hdf5 is preserved
 
@@ -354,8 +337,8 @@ if __name__ == '__main__':
     std_all = feature_all.std(axis=0, keepdims=True)
     assert mean_all.shape == std_all.shape == (1, 26)
 
-    np.save(os.path.join(trainset_numpy, 'mean.npy'), mean_all)
-    np.save(os.path.join(trainset_numpy, 'std.npy'), std_all)
+    np.save(os.path.join(trainset_numpy, 'mean_legacy.npy'), mean_all)
+    np.save(os.path.join(trainset_numpy, 'std_legacy.npy'), std_all)
 
     # # then write them out in numpy files.
     # for name, feature, label, sentence_label in zip(name_list, feature_list, label_list, sentence_list):
