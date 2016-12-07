@@ -41,7 +41,7 @@ def define_one_layer_BLSTM(inputX, seqLengths, nHidden):
     forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     backwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     (output_fw, output_bw), _ = bidirectional_dynamic_rnn(forwardH1, backwardH1, inputX, dtype=tf.float32,
-                                                          scope='BDLSTM_H1', sequence_length=seqLengths,
+                                                          sequence_length=seqLengths,
                                                           time_major=False)
     # both of shape (batch_size, max_time, hidden_size)
     output_combined = tf.concat(2, (output_fw, output_bw))
@@ -71,3 +71,30 @@ def define_logit_and_ctc(output_combined, targetY, seqLengths, nHidden, nClass, 
         tf.size(targetY.values))
 
     return cost, errorRate
+
+def define_siamese_loss(output_1, output_2, label, k=200, margin=5.0):
+    o_1 = tf.slice(output_1, [0,0,0], [-1,k,-1])
+    o_2 = tf.slice(output_2, [0,0,0], [-1,k,-1])
+    o_1 = tf.reshape(o_1, [tf.shape(o_1)[0], -1])
+    o_2 = tf.reshape(o_2, [tf.shape(o_2)[0], -1])
+    labels_t = label
+    labels_f = tf.sub(1.0, label, name="1-yi")          # labels_ = !labels;
+    eucd2 = tf.pow(tf.sub(o_1, o_2), 2)
+    eucd2 = tf.reduce_sum(eucd2, 1)
+    eucd = tf.sqrt(eucd2+1e-6, name="eucd")
+    C = tf.constant(margin, name="C")
+    # yi*||CNN(p1i)-CNN(p2i)||^2 + (1-yi)*max(0, C-||CNN(p1i)-CNN(p2i)||^2)
+    pos = tf.mul(labels_t, eucd2, name="yi_x_eucd2")
+    # neg = tf.mul(labels_f, tf.sub(0.0,eucd2), name="yi_x_eucd2")
+    # neg = tf.mul(labels_f, tf.maximum(0.0, tf.sub(C,eucd2)), name="Nyi_x_C-eucd_xx_2")
+    neg = tf.mul(labels_f, tf.pow(tf.maximum(tf.sub(C, eucd), 0), 2), name="Nyi_x_C-eucd_xx_2")
+    losses = tf.add(pos, neg, name="losses")
+    loss = tf.reduce_mean(losses, name="loss")
+    return loss
+
+def define_siamese_input(nFeatures):
+    # batch size x max time x num features.
+    inputX = tf.placeholder(tf.float32, shape=(None, None, nFeatures))
+
+    seqLengths = tf.placeholder(tf.int32, shape=(None))
+    return inputX, seqLengths
