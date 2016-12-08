@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.python.ops import ctc_ops as ctc
 from tensorflow.python.ops import rnn_cell
-from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn
+from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn, dynamic_rnn
 from tensorflow.python.ops import functional_ops
 import os
 
@@ -40,7 +40,7 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
     return tf.SparseTensor(tf.to_int64(indices), vals_sparse, tf.to_int64(label_shape))
 
 
-def define_pretrain_input_single(input_directory, noise_std, epoch):
+def define_pretrain_input_single(input_directory, epoch):
     # I will scan over every files in input_directory
     file_list = sorted(os.listdir(input_directory))
     for f in file_list:
@@ -51,16 +51,16 @@ def define_pretrain_input_single(input_directory, noise_std, epoch):
     # for f1, f2 in zip(file_list_mfcc, file_list_label):
     #     assert '/' not in f1 and os.path.splitext(f1)[0] == os.path.splitext(f2)[0]
     # # build a filename queue
-    rng_state = np.random.RandomState(seed=0)
-    permutation = rng_state.permutation(len(file_list))
-    file_list = np.array(file_list)[permutation]
+    # rng_state = np.random.RandomState(seed=0)
+    # permutation = rng_state.permutation(len(file_list))
+    # file_list = np.array(file_list)[permutation]
     # rng_state = np.random.RandomState(seed=0)
     # permutation = rng_state.permutation(len(file_list_mfcc))
     # file_list_mfcc = np.array(file_list_mfcc)[permutation]
     # file_list_label = np.array(file_list_label)[permutation]
 
     file_name_producer = tf.train.string_input_producer([os.path.join(input_directory, x) for x in file_list],
-                                                        shuffle=False, num_epochs=epoch)
+                                                        shuffle=True, num_epochs=epoch)
     # label_file_name_producer = tf.train.string_input_producer(
     #     [os.path.join(input_directory, x) for x in file_list_label],
     #     shuffle=True, num_epochs=epoch, seed=0)
@@ -103,7 +103,7 @@ def define_pretrain_input_batch(input_directory, batch_size, noise_std=0.0, epoc
     mean_all = np.load(os.path.join(trainset_numpy, 'mean.npy'))
     std_all = np.load(os.path.join(trainset_numpy, 'std.npy'))
 
-    mfcc, n_frame, label, label_len, _, name = define_pretrain_input_single(input_directory, noise_std=noise_std,
+    mfcc, n_frame, label, label_len, _, name = define_pretrain_input_single(input_directory,
                                                                             epoch=epoch)
     # follow <https://www.tensorflow.org/versions/r0.12/how_tos/reading_data/index.html>
     mfcc_batch, n_frame_batch, label_batch, label_len_batch, name_batch = tf.train.batch(
@@ -114,15 +114,17 @@ def define_pretrain_input_batch(input_directory, batch_size, noise_std=0.0, epoc
         dynamic_pad=True,
         allow_smaller_final_batch=False)
     mfcc_batch = (mfcc_batch - mean_all) / std_all
+    if noise_std != 0:
+        mfcc_batch = mfcc_batch + tf.random_normal(tf.shape(mfcc_batch), stddev=noise_std)
     print('mean std done')
     # convert to sparse
     label_sparse = tf.to_int32(ctc_label_dense_to_sparse(label_batch, label_len_batch))
-    print('mfcc', mfcc_batch)
-    print('frame', n_frame_batch)
-    print('label', label_sparse)
-    print('name', name_batch)
-    print('label_dense', label_batch)
-    return mfcc_batch, n_frame_batch, label_sparse, name_batch, label_batch
+    # print('mfcc', mfcc_batch)
+    # print('frame', n_frame_batch)
+    # print('label', label_sparse)
+    # print('name', name_batch)
+    # print('label_dense', label_batch)
+    return mfcc_batch, n_frame_batch, label_sparse, name_batch
 
 
 # def define_input(nFeatures):
@@ -144,11 +146,11 @@ def define_pretrain_input_batch(input_directory, batch_size, noise_std=0.0, epoc
 def define_one_layer_BLSTM(inputX, seqLengths, nHidden):
     forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     backwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
-    print(inputX, seqLengths)
+    # print(inputX, seqLengths)
     (output_fw, output_bw), _ = bidirectional_dynamic_rnn(forwardH1, backwardH1, inputX, dtype=tf.float32,
                                                           sequence_length=seqLengths,
                                                           time_major=False)
-    print(inputX)
+    # print(inputX)
     # both of shape (batch_size, max_time, hidden_size)
     output_combined = tf.concat(2, (output_fw, output_bw))
     # [num batch] x [num max time] x (hidden_sizex2)
@@ -156,17 +158,35 @@ def define_one_layer_BLSTM(inputX, seqLengths, nHidden):
     return output_combined, nHidden * 2  # hidden*2 is number of actual hidden states.
 
 
-def define_one_layer_LSTM(inputX, seqLengths, nHidden):
-    lstm_cell = rnn_cell.BasicLSTMCell(nHidden, state_is_tuple=True)
+def define_two_layer_LSTM(inputX, seqLengths, nHidden):
+    lstm_cell = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
     cell = rnn_cell.MultiRNNCell([lstm_cell] * 2)
 
     initial = cell.zero_state(tf.shape(inputX)[0], tf.float32)
 
-    outputs, _ = tf.nn.dynamic_rnn(cell, inputX, dtype=tf.float32,
-                                   sequence_length=seqLengths, initial_state=initial,
-                                   time_major=False)
+    outputs, _ = dynamic_rnn(cell, inputX, dtype=tf.float32,
+                             sequence_length=seqLengths, initial_state=initial,
+                             time_major=False)
 
     return outputs, nHidden  # hidden*2 is number of actual hidden states.
+
+
+def define_one_layer_LSTM(inputX, seqLengths, nHidden):
+    forwardH1 = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
+    print(inputX, seqLengths)
+    initial = forwardH1.zero_state(tf.shape(inputX)[0], tf.float32)
+    outputs, _ = dynamic_rnn(forwardH1, inputX, dtype=tf.float32,
+                             sequence_length=seqLengths,
+                             time_major=False)
+
+    return outputs, nHidden
+
+
+layer_func_dict = {
+    'BLSTM1L': define_one_layer_BLSTM,
+    'LSTM2L': define_two_layer_LSTM,
+    'LSTM1L': define_one_layer_LSTM,
+}
 
 
 def define_logit_and_ctc(output_combined, targetY, seqLengths, nHiddenOutput, nClass):
@@ -184,11 +204,13 @@ def define_logit_and_ctc(output_combined, targetY, seqLengths, nHiddenOutput, nC
     logits = tf.reshape(logits, [batch_size, max_time, nClass])
     # Time major, this is convenient for edit distance.
     logits = tf.transpose(logits, (1, 0, 2))
-    loss = ctc.ctc_loss(logits, targetY, seqLengths)
-    cost = tf.reduce_mean(loss)
+    loss_individual = ctc.ctc_loss(logits, targetY, seqLengths)
+    loss_overall = tf.reduce_mean(loss_individual)
 
+    # just use this beam search.
     predictions = tf.to_int32(ctc.ctc_beam_search_decoder(logits, seqLengths)[0][0])
-    errorRate = tf.reduce_sum(tf.edit_distance(predictions, targetY, normalize=False)) / tf.to_float(
-        tf.size(targetY.values))
+    errorRate_raw = tf.reduce_sum(tf.edit_distance(predictions, targetY, normalize=False))
+    z_count_this = tf.size(targetY.values)
+    errorRate_this_batch = errorRate_raw / tf.to_float(z_count_this)
 
-    return cost, errorRate, logits
+    return (loss_overall, loss_individual), (errorRate_raw, z_count_this, errorRate_this_batch), (logits, predictions)
