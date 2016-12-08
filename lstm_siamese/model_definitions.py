@@ -159,7 +159,7 @@ def define_one_layer_BLSTM(inputX, seqLengths, nHidden):
 
 
 def define_two_layer_LSTM(inputX, seqLengths, nHidden):
-    lstm_cell = rnn_cell.LSTMCell(nHidden, use_peepholes=True, state_is_tuple=True)
+    lstm_cell = rnn_cell.LSTMCell(nHidden, state_is_tuple=True)
     cell = rnn_cell.MultiRNNCell([lstm_cell] * 2)
 
     initial = cell.zero_state(tf.shape(inputX)[0], tf.float32)
